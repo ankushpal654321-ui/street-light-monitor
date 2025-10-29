@@ -1,62 +1,73 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8"/>
-  <title>Street Light Monitor</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
-  <style>html,body,#map{height:100%;margin:0;padding:0} #map{height:92vh}</style>
+<title>Smart Street Light Monitor</title>
+<style>
+  #map {
+    height: 100vh;
+    width: 100%;
+  }
+</style>
+
+<script src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAP_API_KEY"></script>
+
+<script>
+const channelID = "3126641"; 
+
+// Field mapping from your ThingSpeak channel
+const locations = [
+    { name: "Light 1", latField: 7, lonField: 8, faultField: 4 },
+    { name: "Light 2", latField: 9, lonField: 10, faultField: 5 },
+    { name: "Light 3", latField: 11, lonField: 12, faultField: 6 }
+];
+
+let map;
+let markers = [];
+
+function initMap() {
+  map = new google.maps.Map(document.getElementById("map"), {
+    zoom: 14,
+    center: { lat: 19.464, lng: 72.882 }, 
+  });
+  fetchData();
+  setInterval(fetchData, 10000); // refresh every 10 seconds
+}
+
+async function fetchData() {
+  const url = `https://api.thingspeak.com/channels/${channelID}/feeds.json`;
+  const response = await fetch(url);
+  const data = await response.json();
+  const lastEntry = data.feeds[data.feeds.length - 1];
+
+  locations.forEach((device, index) => {
+    const lat = parseFloat(lastEntry[`field${device.latField}`]);
+    const lon = parseFloat(lastEntry[`field${device.lonField}`]);
+    const fault = parseInt(lastEntry[`field${device.faultField}`]);
+
+    if (!isNaN(lat) && !isNaN(lon)) {
+      const iconColor = fault === 1 ? "red" : "green";
+      const markerIcon = {
+        url: `http://maps.google.com/mapfiles/ms/icons/${iconColor}-dot.png`
+      };
+
+      if (markers[index]) {
+        markers[index].setMap(null);
+      }
+
+      markers[index] = new google.maps.Marker({
+        position: { lat: lat, lng: lon },
+        map: map,
+        icon: markerIcon,
+        title: `${device.name} → Fault: ${fault}`
+      });
+    }
+  });
+}
+</script>
 </head>
-<body>
-  <h2 style="text-align:center">Street Light Monitor (Live)</h2>
+
+<body onload="initMap()">
   <div id="map"></div>
-
-  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
-  <script>
-    const channelID = "2549759";              // ← your channel
-    const map = L.map('map').setView([19.4675,72.873], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-    // helper to fetch latest unique location entries
-    async function loadFeeds() {
-      const url = `https://api.thingspeak.com/channels/${channelID}/feeds.json?results=50`;
-      const res = await fetch(url);
-      const obj = await res.json();
-      return obj.feeds || [];
-    }
-
-    // clear + draw
-    let markers = [];
-    async function refresh() {
-      // remove old markers
-      markers.forEach(m=>map.removeLayer(m));
-      markers = [];
-
-      const feeds = await loadFeeds();
-      // group by lat+lon to get most recent per location
-      const locations = {};
-      feeds.reverse().forEach(f => {
-        const lat = f.field4;
-        const lon = f.field5;
-        const fault = Number(f.field6);
-        if(!lat || !lon) return;
-        const key = `${lat},${lon}`;
-        if(!locations[key]) locations[key] = {lat,lon,fault};
-      });
-
-      // add markers
-      Object.values(locations).forEach(loc => {
-        const color = (Number(loc.fault) === 1) ? 'red' : 'green';
-        const m = L.circleMarker([loc.lat, loc.lon], {
-          radius: 10, color: color, fillColor: color, fillOpacity: 0.9
-        }).addTo(map);
-        m.bindPopup(`Lat: ${loc.lat}<br>Lon: ${loc.lon}<br>Fault: ${loc.fault}`);
-        markers.push(m);
-      });
-    }
-
-    refresh();
-    setInterval(refresh, 20000); // refresh every 20s
-  </script>
 </body>
 </html>
+
