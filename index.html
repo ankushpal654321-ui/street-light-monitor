@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Street Light Monitor</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
+  <style>html,body,#map{height:100%;margin:0;padding:0} #map{height:92vh}</style>
+</head>
+<body>
+  <h2 style="text-align:center">Street Light Monitor (Live)</h2>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <script>
+    const channelID = "2549759";              // ← your channel
+    const map = L.map('map').setView([19.4675,72.873], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    // helper to fetch latest unique location entries
+    async function loadFeeds() {
+      const url = `https://api.thingspeak.com/channels/${channelID}/feeds.json?results=50`;
+      const res = await fetch(url);
+      const obj = await res.json();
+      return obj.feeds || [];
+    }
+
+    // clear + draw
+    let markers = [];
+    async function refresh() {
+      // remove old markers
+      markers.forEach(m=>map.removeLayer(m));
+      markers = [];
+
+      const feeds = await loadFeeds();
+      // group by lat+lon to get most recent per location
+      const locations = {};
+      feeds.reverse().forEach(f => {
+        const lat = f.field4;
+        const lon = f.field5;
+        const fault = Number(f.field6);
+        if(!lat || !lon) return;
+        const key = `${lat},${lon}`;
+        if(!locations[key]) locations[key] = {lat,lon,fault};
+      });
+
+      // add markers
+      Object.values(locations).forEach(loc => {
+        const color = (Number(loc.fault) === 1) ? 'red' : 'green';
+        const m = L.circleMarker([loc.lat, loc.lon], {
+          radius: 10, color: color, fillColor: color, fillOpacity: 0.9
+        }).addTo(map);
+        m.bindPopup(`Lat: ${loc.lat}<br>Lon: ${loc.lon}<br>Fault: ${loc.fault}`);
+        markers.push(m);
+      });
+    }
+
+    refresh();
+    setInterval(refresh, 20000); // refresh every 20s
+  </script>
+</body>
+</html>
