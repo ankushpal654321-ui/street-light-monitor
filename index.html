@@ -31,7 +31,8 @@
   /*************************************************************************
    * Configuration - EDIT THESE
    *************************************************************************/
-const url = `https://api.thingspeak.com/channels/${3143341}/feeds/last.json`;
+const THINGSPEAK_CHANNEL_ID = "3143341";       // <<-- REPLACE with your ThingSpeak Channel ID (number)
+
       // <<-- REPLACE with your ThingSpeak Channel ID (number)
   // Field mapping used by the ESP32:
   // field1 = latitude, field2 = longitude, field3 = status (ON/OFF/FAULT), field4 = color (green/red/blue)
@@ -84,7 +85,8 @@ const url = `https://api.thingspeak.com/channels/${3143341}/feeds/last.json`;
   // Pull latest feed from ThingSpeak
   async function fetchLatest() {
     try {
-      const url = `https://api.thingspeak.com/channels/${3143341}/feeds/last.json`;
+  const url = `https://api.thingspeak.com/channels/${THINGSPEAK_CHANNEL_ID}/feeds/last.json`;
+
       const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) throw new Error("HTTP " + res.status);
       const data = await res.json();
