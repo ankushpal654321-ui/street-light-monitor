@@ -31,7 +31,8 @@
   /*************************************************************************
    * Configuration - EDIT THESE
    *************************************************************************/
-  const THINGSPEAK_CHANNEL_ID = "3143341";       // <<-- REPLACE with your ThingSpeak Channel ID (number)
+const url = `https://api.thingspeak.com/channels/${3143341}/feeds/last.json`;
+      // <<-- REPLACE with your ThingSpeak Channel ID (number)
   // Field mapping used by the ESP32:
   // field1 = latitude, field2 = longitude, field3 = status (ON/OFF/FAULT), field4 = color (green/red/blue)
   // If you used different fields, update the indices below:
