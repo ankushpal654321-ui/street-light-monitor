@@ -1,133 +1,89 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Street Light Monitor (Leaflet + ThingSpeak)</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Street Light Fault Detection</title>
+
+  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+
   <style>
-    body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial; }
-    header { padding:10px 16px; background:#0b5cff; color:white; display:flex; gap:12px; align-items:center; }
-    header h1 { font-size:18px; margin:0; }
-    #info { margin-left:auto; font-size:13px; opacity:.95; }
-    #map { height:calc(100vh - 56px); width:100%; }
-    .status-box { padding:6px 10px; background:rgba(255,255,255,0.92); border-radius:6px; box-shadow:0 1px 4px rgba(0,0,0,.12); }
-    .small { font-size:13px; color:#333; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: #eee;
+      text-align: center;
+    }
+
+    h2 {
+      margin: 10px 0;
+      color: #00ff88;
+    }
+
+    #map {
+      height: 90vh;
+      width: 100%;
+      border: 2px solid #00ff88;
+      border-radius: 10px;
+    }
+
+    .status {
+      margin: 8px;
+      font-size: 16px;
+      color: #ccc;
+    }
   </style>
 </head>
-<body>
-  <header>
-    <h1>Street Light Fault Monitor</h1>
-    <div class="status-box small" id="statustext">Loading latest data…</div>
-    <div id="info" class="small">Last update: —</div>
-  </header>
 
+<body>
+  <h2>Street Light Fault Detection Map</h2>
+  <div class="status">Loading latest data...</div>
   <div id="map"></div>
 
-  <!-- Leaflet -->
+  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
   <script>
-  /*************************************************************************
-   * Configuration - Your ThingSpeak Channel
-   *************************************************************************/
-  const THINGSPEAK_CHANNEL_ID = "3143341";  // ✅ your ThingSpeak Channel ID
-  // Field mapping used by the ESP32:
-  // field1 = latitude, field2 = longitude, field3 = status (ON/OFF/FAULT), field4 = color (green/red/blue)
-  const FIELD_LAT = "field1";
-  const FIELD_LON = "field2";
-  const FIELD_STATUS = "field3";
-  const FIELD_COLOR = "field4";
+    // ------------------- CONFIG -------------------
+    const THINGSPEAK_CHANNEL_ID = "3143341"; // ✅ Your ThingSpeak channel ID
+    const UPDATE_INTERVAL = 2000; // 2 seconds
+    const map = L.map("map").setView([19.467960, 72.888108], 17);
 
-  const UPDATE_INTERVAL_MS = 15000; // 15 seconds (safe for free ThingSpeak accounts)
-  /*************************************************************************/
+    // Tile Layer (OpenStreetMap)
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "Map data © OpenStreetMap contributors",
+    }).addTo(map);
 
-  if (!THINGSPEAK_CHANNEL_ID) {
-    alert("Please set your ThingSpeak Channel ID before publishing.");
-  }
+    let marker = null;
 
-  // Map initialization (default center)
-  const defaultLat = 19.467960;
-  const defaultLon = 72.888108;
-  const map = L.map('map').setView([defaultLat, defaultLon], 16);
+    async function fetchData() {
+      try {
+        const url = `https://api.thingspeak.com/channels/${THINGSPEAK_CHANNEL_ID}/feeds.json?results=1`;
+        const response = await fetch(url);
+        const data = await response.json();
 
-  // OpenStreetMap tiles
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '© OpenStreetMap contributors'
-  }).addTo(map);
+        if (!data.feeds || data.feeds.length === 0) {
+          document.querySelector(".status").textContent = "⚠️ No data found yet...";
+          return;
+        }
 
-  // Colored marker icons
-  const ICON_BASE = "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/";
-  const ICONS = {
-    green: L.icon({ iconUrl: ICON_BASE + "marker-icon-green.png", shadowUrl: ICON_BASE + "marker-shadow.png", iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34] }),
-    red:   L.icon({ iconUrl: ICON_BASE + "marker-icon-red.png",   shadowUrl: ICON_BASE + "marker-shadow.png", iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34] }),
-    blue:  L.icon({ iconUrl: ICON_BASE + "marker-icon-blue.png",  shadowUrl: ICON_BASE + "marker-shadow.png", iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34] }),
-    grey:  L.icon({ iconUrl: ICON_BASE + "marker-icon-grey.png",  shadowUrl: ICON_BASE + "marker-shadow.png", iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34] })
-  };
+        const feed = data.feeds[0];
+        const lat = parseFloat(feed.field1);
+        const lon = parseFloat(feed.field2);
+        const status = feed.field3 || "Unknown";
+        const color = feed.field4 || "gray";
 
-  let marker = null;
+        document.querySelector(".status").innerHTML = 
+          `📍 Lat: ${lat.toFixed(6)}, Lon: ${lon.toFixed(6)}<br>💡 Status: ${status} (${color})`;
 
-  // Helper: sanitize color string
-  function normalizeColor(raw) {
-    if (!raw) return "grey";
-    raw = raw.toString().trim().toLowerCase();
-    if (raw.includes("green") || raw === "on") return "green";
-    if (raw.includes("red") || raw === "fault") return "red";
-    if (raw.includes("blue") || raw === "off") return "blue";
-    return raw in ICONS ? raw : "grey";
-  }
+        // Marker color
+        const icon = L.divIcon({
+          className: "custom-icon",
+          html: `<div style="background:${color}; width:15px; height:15px; border-radius:50%; border:2px solid #fff;"></div>`,
+        });
 
-  // Fetch latest data from ThingSpeak
-  async function fetchLatest() {
-    try {
-      const url = `https://api.thingspeak.com/channels/${THINGSPEAK_CHANNEL_ID}/feeds/last.json`;
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const data = await res.json();
-
-      const latRaw = data[FIELD_LAT];
-      const lonRaw = data[FIELD_LON];
-      const statusRaw = data[FIELD_STATUS];
-      const colorRaw = data[FIELD_COLOR];
-
-      const lat = parseFloat(latRaw);
-      const lon = parseFloat(lonRaw);
-      const status = statusRaw ? statusRaw.toString() : "—";
-      const color = normalizeColor(colorRaw || statusRaw);
-
-      // Update UI
-      const now = new Date();
-      document.getElementById("info").textContent = "Last update: " + now.toLocaleString();
-      document.getElementById("statustext").innerHTML = `<strong>Status:</strong> ${status} &nbsp; <strong>Color:</strong> ${color}`;
-
-      if (!isFinite(lat) || !isFinite(lon)) {
-        console.warn("Invalid lat/lon from ThingSpeak:", latRaw, lonRaw);
-        return;
-      }
-
-      // Add or update marker
-      const pos = [lat, lon];
-      if (!marker) {
-        marker = L.marker(pos, { icon: ICONS[color] || ICONS.grey }).addTo(map);
-        marker.bindPopup(`<b>Street Light</b><br>Status: ${status}`).openPopup();
-        map.setView(pos, 16);
-      } else {
-        marker.setLatLng(pos);
-        marker.setIcon(ICONS[color] || ICONS.grey);
-        marker.getPopup().setContent(`<b>Street Light</b><br>Status: ${status}`);
-      }
-    } catch (err) {
-      console.error("Fetch error:", err);
-      document.getElementById("statustext").textContent = "Error fetching data";
-    }
-  }
-
-  // Polling
-  fetchLatest();
-  setInterval(fetchLatest, UPDATE_INTERVAL_MS);
-  </script>
-</body>
-</html>
-
+        if (marker) {
+          marker.setLatLng([lat, lon]);
 
