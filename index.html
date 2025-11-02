@@ -1,73 +1,61 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8"/>
-  <title>Street Light Monitor (Live)</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
-  <style>
-    html,body,#map{height:100%;margin:0;padding:0}
-    #map{height:92vh}
-    h2{text-align:center;margin:8px 0}
-  </style>
-</head>
-<body>
-  <h2>Street Light Monitor (Live)</h2>
-  <div id="map"></div>
+  <title>Smart Streetlight Map</title>
 
-  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+  <!-- Google Maps SDK -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAoySOeWQYbvUvwSkpdeaIMGowzDdQJusg"></script>
+
   <script>
-    const channelID = "3126641";   // ✅ Your channel ID
+    // ðŸ”¹ Step 4: Replace below config with your Firebase details
+    const firebaseConfig = {
+      apiKey: "AIzaSyDLb2pMYxnTfXeF6u4SddwFwHC5fhoDhcY",
+      databaseURL: "https://console.firebase.google.com/project/street-light-fault-detection-s/database/street-light-fault-detection-s-default-rtdb/data/~2F"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
 
-    const map = L.map('map').setView([19.4675, 72.873], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-    let markers = [];
-
-    async function refresh() {
-      markers.forEach(m => map.removeLayer(m));
-      markers = [];
-
-      const url = `https://api.thingspeak.com/channels/${channelID}/feeds.json?results=50`;
-      const res = await fetch(url);
-      const data = await res.json();
-      const feeds = data.feeds || [];
-
-      const unique = {};
-
-      feeds.reverse().forEach(f => {
-        const lat = parseFloat(f.field4);
-        const lon = parseFloat(f.field5);
-        const fault = Number(f.field6);
-
-        if (!lat || !lon) return;
-
-        const key = `${lat}|${lon}`;
-        if (!unique[key]) unique[key] = { lat, lon, fault };
+    function initMap() {
+      const center = { lat: 19.467960, lng: 72.888108 }; // your location
+      const map = new google.maps.Map(document.getElementById("map"), {
+        center: center,
+        zoom: 15
       });
 
-      Object.values(unique).forEach(loc => {
-        const color = loc.fault === 1 ? 'red' : 'green';
+      const marker = new google.maps.Marker({
+        position: center,
+        map: map,
+        title: "Streetlight Status"
+      });
 
-        const marker = L.circleMarker([loc.lat, loc.lon], {
-          radius: 10,
-          color: color,
-          fillColor: color,
-          fillOpacity: 1
-        }).addTo(map);
+      // ðŸ”¹ Listen to Firebase data
+      const ref = db.ref("/streetlight");
+      ref.on("value", (snapshot) => {
+        const data = snapshot.val();
 
-        marker.bindPopup(
-          `<b>Lat:</b> ${loc.lat}<br><b>Lon:</b> ${loc.lon}<br><b>Fault:</b> ${loc.fault}`
-        );
+        const colorIcon =
+          data.color === "red"
+            ? "http://maps.google.com/mapfiles/ms/icons/red-dot.png"
+            : data.color === "green"
+            ? "http://maps.google.com/mapfiles/ms/icons/green-dot.png"
+            : "http://maps.google.com/mapfiles/ms/icons/grey-dot.png";
 
-        markers.push(marker);
+        marker.setIcon(colorIcon);
+        marker.setPosition({
+          lat: parseFloat(data.latitude),
+          lng: parseFloat(data.longitude),
+        });
       });
     }
-
-    refresh();
-    setInterval(refresh, 10000);
   </script>
+</head>
+
+<body onload="initMap()">
+  <h2 style="text-align:center;">ðŸŒ™ Smart Streetlight Monitoring</h2>
+  <div id="map" style="width:100%;height:90vh;"></div>
 </body>
 </html>
-
-
