@@ -86,4 +86,22 @@
 
         if (marker) {
           marker.setLatLng([lat, lon]);
+          marker.setIcon(icon);
+        } else {
+          marker = L.marker([lat, lon], { icon }).addTo(map);
+        }
+
+        map.setView([lat, lon]);
+      } catch (err) {
+        document.querySelector(".status").textContent = "⚠️ Error loading data...";
+        console.error(err);
+      }
+    }
+
+    fetchData();
+    setInterval(fetchData, UPDATE_INTERVAL);
+  </script>
+</body>
+</html>
+
 
