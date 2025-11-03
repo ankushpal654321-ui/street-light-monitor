@@ -1,106 +1,51 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Street Light Fault Detection</title>
-
-  <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-
-  <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: #111;
-      color: #eee;
-      text-align: center;
-    }
-
-    h2 {
-      margin: 10px 0;
-      color: #00ff88;
-    }
-
-    #map {
-      height: 90vh;
-      width: 100%;
-      border: 2px solid #00ff88;
-      border-radius: 10px;
-    }
-
-    .status {
-      margin: 8px;
-      font-size: 16px;
-      color: #ccc;
-    }
-  </style>
+<meta charset="utf-8" />
+<title>Dual Street Light Monitor</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<style>
+  body { margin:0; font-family:system-ui; }
+  header { padding:10px 16px; background:#0078ff; color:white; }
+  #map { height:calc(100vh - 50px); }
+</style>
 </head>
-
 <body>
-  <h2>Street Light Fault Detection Map</h2>
-  <div class="status">Loading latest data...</div>
-  <div id="map"></div>
+<header><h3>Street Light Fault Monitor (2 Lights)</h3></header>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+const CHANNEL_ID = "3143341";
+const FIELDS = { LAT1:"field1", LON1:"field2", S1:"field3", LAT2:"field4", LON2:"field5", S2:"field6", C1:"field7", C2:"field8" };
 
-  <!-- Leaflet JS -->
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+const ICONS = {
+  green: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png",
+  red: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
+  blue: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png",
+  grey: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-grey.png"
+};
 
-  <script>
-    // ------------------- CONFIG -------------------
-    const THINGSPEAK_CHANNEL_ID = "3143341"; // ✅ Your ThingSpeak channel ID
-    const UPDATE_INTERVAL = 2000; // 2 seconds
-    const map = L.map("map").setView([19.467960, 72.888108], 17);
+let map = L.map('map').setView([19.467960, 72.888108], 16);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+let markers = [];
 
-    // Tile Layer (OpenStreetMap)
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "Map data © OpenStreetMap contributors",
-    }).addTo(map);
+async function updateMap(){
+  const url = `https://api.thingspeak.com/channels/${CHANNEL_ID}/feeds/last.json`;
+  const res = await fetch(url); const data = await res.json();
+  const lat1 = parseFloat(data[FIELDS.LAT1]); const lon1 = parseFloat(data[FIELDS.LON1]);
+  const lat2 = parseFloat(data[FIELDS.LAT2]); const lon2 = parseFloat(data[FIELDS.LON2]);
+  const s1 = data[FIELDS.S1]; const s2 = data[FIELDS.S2];
+  const c1 = data[FIELDS.C1]?.toLowerCase() || "grey";
+  const c2 = data[FIELDS.C2]?.toLowerCase() || "grey";
 
-    let marker = null;
-
-    async function fetchData() {
-      try {
-        const url = `https://api.thingspeak.com/channels/${THINGSPEAK_CHANNEL_ID}/feeds.json?results=1`;
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (!data.feeds || data.feeds.length === 0) {
-          document.querySelector(".status").textContent = "⚠️ No data found yet...";
-          return;
-        }
-
-        const feed = data.feeds[0];
-        const lat = parseFloat(feed.field1);
-        const lon = parseFloat(feed.field2);
-        const status = feed.field3 || "Unknown";
-        const color = feed.field4 || "gray";
-
-        document.querySelector(".status").innerHTML = 
-          `📍 Lat: ${lat.toFixed(6)}, Lon: ${lon.toFixed(6)}<br>💡 Status: ${status} (${color})`;
-
-        // Marker color
-        const icon = L.divIcon({
-          className: "custom-icon",
-          html: `<div style="background:${color}; width:15px; height:15px; border-radius:50%; border:2px solid #fff;"></div>`,
-        });
-
-        if (marker) {
-          marker.setLatLng([lat, lon]);
-          marker.setIcon(icon);
-        } else {
-          marker = L.marker([lat, lon], { icon }).addTo(map);
-        }
-
-        map.setView([lat, lon]);
-      } catch (err) {
-        document.querySelector(".status").textContent = "⚠️ Error loading data...";
-        console.error(err);
-      }
-    }
-
-    fetchData();
-    setInterval(fetchData, UPDATE_INTERVAL);
-  </script>
+  [markers[0], markers[1]].forEach(m => m && map.removeLayer(m));
+  markers[0] = L.marker([lat1, lon1], { icon: L.icon({iconUrl:ICONS[c1], iconSize:[25,41], iconAnchor:[12,41]}) }).addTo(map).bindPopup(`LED1 - ${s1}`);
+  markers[1] = L.marker([lat2, lon2], { icon: L.icon({iconUrl:ICONS[c2], iconSize:[25,41], iconAnchor:[12,41]}) }).addTo(map).bindPopup(`LED2 - ${s2}`);
+}
+updateMap();
+setInterval(updateMap, 5000);
+</script>
 </body>
 </html>
 
