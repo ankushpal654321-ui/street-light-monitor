@@ -1,52 +1,175 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="utf-8" />
-<title>Dual Street Light Monitor</title>
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-<style>
-  body { margin:0; font-family:system-ui; }
-  header { padding:10px 16px; background:#0078ff; color:white; }
-  #map { height:calc(100vh - 50px); }
-</style>
+  <title>Smart Pole Map - Real Time + History</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <style>
+    body { margin:0; font-family:Arial; }
+    #map { height:100vh; }
+    #info {
+      position:absolute;
+      top:10px;
+      left:50%;
+      transform:translateX(-50%);
+      background:white;
+      padding:10px 20px;
+      border-radius:5px;
+      box-shadow:0 0 10px rgba(0,0,0,0.3);
+      z-index:1000;
+    }
+    canvas {
+      width: 250px !important;
+      height: 150px !important;
+    }
+  </style>
 </head>
 <body>
-<header><h3>Street Light Fault Monitor (2 Lights)</h3></header>
-<div id="map"></div>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script>
-const CHANNEL_ID = "3143341";
-const FIELDS = { LAT1:"field1", LON1:"field2", S1:"field3", LAT2:"field4", LON2:"field5", S2:"field6", C1:"field7", C2:"field8" };
+  <div id="info">Smart Pole Status Map</div>
+  <div id="map"></div>
 
-const ICONS = {
-  green: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png",
-  red: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
-  blue: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png",
-  grey: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-grey.png"
-};
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-let map = L.map('map').setView([19.467960, 72.888108], 16);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
-let markers = [];
+  <script>
+    // --- Initialize map ---
+    var map = L.map('map').setView([19.07, 72.87], 13);
 
-async function updateMap(){
-  const url = `https://api.thingspeak.com/channels/${CHANNEL_ID}/feeds/last.json`;
-  const res = await fetch(url); const data = await res.json();
-  const lat1 = parseFloat(data[FIELDS.LAT1]); const lon1 = parseFloat(data[FIELDS.LON1]);
-  const lat2 = parseFloat(data[FIELDS.LAT2]); const lon2 = parseFloat(data[FIELDS.LON2]);
-  const s1 = data[FIELDS.S1]; const s2 = data[FIELDS.S2];
-  const c1 = data[FIELDS.C1]?.toLowerCase() || "grey";
-  const c2 = data[FIELDS.C2]?.toLowerCase() || "grey";
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
 
-  [markers[0], markers[1]].forEach(m => m && map.removeLayer(m));
-  markers[0] = L.marker([lat1, lon1], { icon: L.icon({iconUrl:ICONS[c1], iconSize:[25,41], iconAnchor:[12,41]}) }).addTo(map).bindPopup(`LED1 - ${s1}`);
-  markers[1] = L.marker([lat2, lon2], { icon: L.icon({iconUrl:ICONS[c2], iconSize:[25,41], iconAnchor:[12,41]}) }).addTo(map).bindPopup(`LED2 - ${s2}`);
-}
-updateMap();
-setInterval(updateMap, 5000);
-</script>
+    // --- Custom pole icon ---
+    function createPoleIcon(color) {
+      return L.divIcon({
+        html: `
+          <div style="
+            width:20px; 
+            height:40px; 
+            background:${color}; 
+            border-radius:4px; 
+            position:relative;">
+            <div style="
+              width:0; 
+              height:0; 
+              border-left:10px solid transparent;
+              border-right:10px solid transparent;
+              border-bottom:10px solid ${color};
+              position:absolute; 
+              top:-10px; 
+              left:0;"></div>
+          </div>
+        `,
+        className: '',
+        iconSize: [20,50],
+        iconAnchor: [10,50],
+        popupAnchor: [0,-50]
+      });
+    }
+
+    // --- Initialize poles ---
+    var poles = [
+      { name: 'Pole 1', lat: 19.072, lon: 72.882, status: 'gray', field: 'field1' },
+      { name: 'Pole 2', lat: 19.068, lon: 72.885, status: 'gray', field: 'field2' },
+      { name: 'Pole 3', lat: 19.070, lon: 72.890, status: 'gray', field: 'field3' }
+    ];
+
+    var poleMarkers = [];
+    const apiKey = "50TS40IY7R5RVBKP"; // Your ThingSpeak API key
+
+    // --- Add poles to map ---
+    poles.forEach((pole, index) => {
+      var marker = L.marker([pole.lat, pole.lon], {icon: createPoleIcon(pole.status)})
+        .bindPopup(`<b>${pole.name}</b><br>Status: ${pole.status}<br>Loading chart...`)
+        .addTo(map);
+
+      // On popup open, fetch historical data and display chart
+      marker.on('popupopen', () => {
+        fetchHistoricalData(pole.field, marker);
+      });
+
+      poleMarkers.push(marker);
+    });
+
+    // --- Fetch latest status ---
+    async function fetchPoleStatus() {
+      try {
+        const response = await fetch(`https://api.thingspeak.com/channels/3311507/feeds.json?api_key=${apiKey}&results=1`);
+        const data = await response.json();
+        const feed = data.feeds[0];
+
+        poles.forEach((pole, index) => {
+          let statusValue = feed[pole.field]; // 0,1,2
+          let color = 'gray';
+          if(statusValue == '1') color = 'green';
+          else if(statusValue == '2') color = 'red';
+
+          pole.status = color;
+          poleMarkers[index].setIcon(createPoleIcon(color));
+          poleMarkers[index].setPopupContent(`<b>${pole.name}</b><br>Status: ${color}<br>Click for history`);
+        });
+      } catch (err) {
+        console.error("Error fetching ThingSpeak data:", err);
+      }
+    }
+
+    setInterval(fetchPoleStatus, 10000); // update every 10s
+    fetchPoleStatus(); // initial fetch
+
+    // --- Fetch historical data for a pole ---
+    async function fetchHistoricalData(field, marker) {
+      try {
+        const response = await fetch(`https://api.thingspeak.com/channels/3311507/fields/${field.slice(-1)}.json?api_key=${apiKey}&results=20`);
+        const data = await response.json();
+        const feeds = data.feeds;
+
+        const labels = feeds.map(f => f.created_at.slice(11,19)); // show HH:MM:SS
+        const values = feeds.map(f => parseInt(f[`field${field.slice(-1)}`]));
+
+        const popupContent = `<b>${marker.getPopup().getContent().split('<br>')[0]}</b><br>
+                              <canvas id="chart${field}" width="250" height="150"></canvas>`;
+
+        marker.setPopupContent(popupContent);
+
+        // Delay to allow canvas element to render
+        setTimeout(() => {
+          const ctx = document.getElementById(`chart${field}`).getContext('2d');
+          new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels: labels,
+              datasets: [{
+                label: 'Status (0=Gray,1=Green,2=Red)',
+                data: values,
+                borderColor: 'blue',
+                backgroundColor: 'rgba(0,0,255,0.1)',
+                tension:0.2,
+                fill:true
+              }]
+            },
+            options: {
+              responsive:false,
+              plugins: {
+                legend: { display: false }
+              },
+              scales: {
+                y: { min:0, max:2, ticks:{stepSize:1} }
+              }
+            }
+          });
+        }, 100);
+
+      } catch (err) {
+        console.error("Error fetching historical data:", err);
+      }
+    }
+
+  </script>
 </body>
 </html>
-
-
