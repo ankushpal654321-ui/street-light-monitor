@@ -83,10 +83,10 @@
     var poleMarkers = [];
     const apiKey = "50TS40IY7R5RVBKP"; // Your ThingSpeak API key
 
-    // --- Add poles to map ---
+    // --- Add poles to map (start gray) ---
     poles.forEach((pole, index) => {
-      var marker = L.marker([pole.lat, pole.lon], {icon: createPoleIcon(pole.status)})
-        .bindPopup(`<b>${pole.name}</b><br>Status: ${pole.status}<br>Loading chart...`)
+      var marker = L.marker([pole.lat, pole.lon], {icon: createPoleIcon('gray')})
+        .bindPopup(`<b>${pole.name}</b><br>Status: gray<br>Click for history`)
         .addTo(map);
 
       // On popup open, fetch historical data and display chart
@@ -105,10 +105,15 @@
         const feed = data.feeds[0];
 
         poles.forEach((pole, index) => {
-          let statusValue = feed[pole.field]; // 0,1,2
-          let color = 'gray';
-          if(statusValue == '1') color = 'green';
-          else if(statusValue == '2') color = 'red';
+          let statusValue = feed[pole.field];
+
+          let color = 'gray'; // default
+          if(statusValue !== null && statusValue !== undefined) {
+            statusValue = parseInt(statusValue);
+            if(statusValue === 1) color = 'green';
+            else if(statusValue === 2) color = 'red';
+            else color = 'gray';
+          }
 
           pole.status = color;
           poleMarkers[index].setIcon(createPoleIcon(color));
@@ -125,19 +130,20 @@
     // --- Fetch historical data for a pole ---
     async function fetchHistoricalData(field, marker) {
       try {
-        const response = await fetch(`https://api.thingspeak.com/channels/3311507/fields/${field.slice(-1)}.json?api_key=${apiKey}&results=20`);
+        const fieldNumber = field.slice(-1); // field1 => 1
+        const response = await fetch(`https://api.thingspeak.com/channels/3311507/fields/${fieldNumber}.json?api_key=${apiKey}&results=20`);
         const data = await response.json();
         const feeds = data.feeds;
 
-        const labels = feeds.map(f => f.created_at.slice(11,19)); // show HH:MM:SS
-        const values = feeds.map(f => parseInt(f[`field${field.slice(-1)}`]));
+        const labels = feeds.map(f => f.created_at.slice(11,19));
+        const values = feeds.map(f => parseInt(f[`field${fieldNumber}`] || 0));
 
         const popupContent = `<b>${marker.getPopup().getContent().split('<br>')[0]}</b><br>
                               <canvas id="chart${field}" width="250" height="150"></canvas>`;
 
         marker.setPopupContent(popupContent);
 
-        // Delay to allow canvas element to render
+        // Delay to ensure canvas element exists
         setTimeout(() => {
           const ctx = document.getElementById(`chart${field}`).getContext('2d');
           new Chart(ctx, {
@@ -149,17 +155,15 @@
                 data: values,
                 borderColor: 'blue',
                 backgroundColor: 'rgba(0,0,255,0.1)',
-                tension:0.2,
-                fill:true
+                tension: 0.2,
+                fill: true
               }]
             },
             options: {
-              responsive:false,
-              plugins: {
-                legend: { display: false }
-              },
+              responsive: false,
+              plugins: { legend: { display: false } },
               scales: {
-                y: { min:0, max:2, ticks:{stepSize:1} }
+                y: { min: 0, max: 2, ticks: { stepSize: 1 } }
               }
             }
           });
